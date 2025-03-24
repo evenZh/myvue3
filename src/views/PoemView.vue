@@ -1,12 +1,20 @@
 <template>
   <div class="poem-container">
     <h1>每日一诗</h1>
-    <div class="poem-card">
+    <div class="poem-card" v-if="poem">
+      <!-- 添加刷新按钮 -->
+      <div class="refresh-icon" @click="fetchPoem" title="换一首诗">
+        <i>🔄</i>
+      </div>
+      
       <h2 class="poem-title">{{ poem.title }}</h2>
       <p class="poem-author">{{ poem.dynasty }} · {{ poem.author }}</p>
       <div class="poem-content">
         <p v-for="(line, index) in poem.content" :key="index">{{ line }}</p>
       </div>
+    </div>
+    <div class="loading" v-else>
+      <p>诗词加载中...</p>
     </div>
   </div>
 </template>
@@ -16,7 +24,9 @@ export default {
   name: 'PoemView',
   data() {
     return {
-      poems: [
+      poem: null,
+      localPoems: [
+        // 保留本地诗歌作为备用
         {
           title: '静夜思',
           author: '李白',
@@ -78,23 +88,77 @@ export default {
           content: ['天门中断楚江开，', '碧水东流至此回。', '两岸青山相对出，', '孤帆一片日边来。']
         }
       ],
-      poem: null
+      useLocalData: false
     }
   },
   created() {
-    // 获取今天的日期作为随机种子
-    const today = new Date();
-    const dateString = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+    this.fetchPoem();
+  },
+  methods: {
+    async fetchPoem() {
+      try {
+        if (this.useLocalData) {
+          this.useLocalPoem();
+          return;
+        }
+        
+        // 使用今日诗词API获取随机诗词
+        const response = await fetch('https://v2.jinrishici.com/one.json');
+        const data = await response.json();
+        
+        if (data && data.status === "success") {
+          // 处理API返回的数据
+          const poemData = data.data;
+          
+          // 获取完整诗词内容
+          let fullContent = [];
+          if (poemData.origin.content && poemData.origin.content.length > 0) {
+            // 如果API返回了完整内容，使用它
+            fullContent = poemData.origin.content.map(line => line.trim());
+          } else {
+            // 否则尝试从匹配项中获取
+            if (poemData.matchTags && poemData.matchTags.length > 0) {
+              const poem = poemData.origin;
+              // 将内容按句分割，处理不同标点符号
+              fullContent = poem.content.split(/[。？！，；：]/)
+                .filter(line => line.trim() !== '')
+                .map(line => line.trim() + '，');
+              
+              // 确保最后一句使用句号结尾
+              if (fullContent.length > 0) {
+                const lastIndex = fullContent.length - 1;
+                fullContent[lastIndex] = fullContent[lastIndex].replace(/，$/, '。');
+              }
+            } else {
+              // 如果无法获取完整内容，至少显示返回的片段
+              fullContent = [poemData.content];
+            }
+          }
+          
+          this.poem = {
+            title: poemData.origin.title,
+            author: poemData.origin.author,
+            dynasty: poemData.origin.dynasty,
+            content: fullContent
+          };
+        } else {
+          // 如果API请求失败，使用本地数据
+          this.useLocalData = true;
+          this.useLocalPoem();
+        }
+      } catch (error) {
+        console.error('获取诗词失败:', error);
+        // 出错时使用本地数据
+        this.useLocalData = true;
+        this.useLocalPoem();
+      }
+    },
     
-    // 使用日期字符串生成一个伪随机数
-    let seed = 0;
-    for (let i = 0; i < dateString.length; i++) {
-      seed += dateString.charCodeAt(i);
+    useLocalPoem() {
+      // 随机选择一首本地诗
+      const randomIndex = Math.floor(Math.random() * this.localPoems.length);
+      this.poem = this.localPoems[randomIndex];
     }
-    
-    // 使用种子选择今天的诗
-    const index = seed % this.poems.length;
-    this.poem = this.poems[index];
   }
 }
 </script>
@@ -118,6 +182,35 @@ h1 {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   padding: 30px;
   text-align: center;
+  position: relative;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+  color: #666;
+}
+
+/* 添加刷新图标样式 */
+.refresh-icon {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  cursor: pointer;
+  font-size: 20px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s;
+}
+
+.refresh-icon:hover {
+  background-color: #f0f0f0;
+  transform: rotate(180deg);
 }
 
 .poem-title {
